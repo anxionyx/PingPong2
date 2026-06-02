@@ -11,8 +11,9 @@ permissions:
   contents: write
 
 jobs:
+  # STEP 1: Determine version and create the release first
   create-release:
-    name: Create Release Draft/Tag
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.determine_version.outputs.version }}
@@ -28,15 +29,26 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            # Automatically generate fallback version if pushing directly to main
-            # Counts commits to cleanly structure an auto-incrementing release version
             COMMIT_COUNT=$(git rev-list --count HEAD)
             echo "version=v0.1.${COMMIT_COUNT}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Create GitHub Release
+        id: create_gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.determine_version.outputs.version }}
+          name: Release ${{ steps.determine_version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # STEP 2: Build and safely upload to the existing release
   build-and-upload:
     name: Build (${{ matrix.target }})
-    needs: create-release
+    needs: create-release # Ensures the release exists before compiling
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -48,7 +60,7 @@ jobs:
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
 
-          # MacOS Targets (Native cross compilation supported on macos-latest)
+          # MacOS Targets
           - os: macos-latest
             target: x86_64-apple-darwin
           - os: macos-latest
@@ -82,22 +94,3 @@ jobs:
           target: ${{ matrix.target }}
           ref: refs/tags/${{ needs.create-release.outputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
-
-  finalize-release:
-    name: Finalize GitHub Release Notes
-    needs: [create-release, build-and-upload]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Create or Update GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          name: Release ${{ needs.create-release.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true # Auto-extracts commit logs and PRs into release documentation
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
