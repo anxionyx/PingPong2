@@ -12,6 +12,7 @@ const PADDLE_HEIGHT: i16 = 4;
 const FPS: u64 = 60;
 const FRAME_TIME: Duration = Duration::from_millis(1000 / FPS);
 const WIN_SCORE: u32 = 7;
+const STARTUP_DURATION: Duration = Duration::from_secs(2);
 
 struct Ball {
     x: f32,
@@ -200,12 +201,92 @@ impl Game {
     }
 }
 
+fn draw_startup_screen<W: Write>(stdout: &mut W, width: u16, height: u16, elapsed: Duration) -> std::io::Result<()> {
+    stdout.queue(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+    
+    let title = "🏓 PING PONG 🏓";
+    let controls_w = "Controls: W/Up - Move Up";
+    let controls_s = "S/Down - Move Down";
+    let controls_esc = "ESC - Quit";
+    let start_msg = "Game starts...";
+    
+    let title_y = height.saturating_sub(10);
+    let controls_y = title_y + 2;
+    
+    // Center text
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(title.len() as u16) / 2,
+        title_y,
+    ))?;
+    write!(stdout, "{}", title)?;
+    
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(controls_w.len() as u16) / 2,
+        controls_y,
+    ))?;
+    write!(stdout, "{}", controls_w)?;
+    
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(controls_s.len() as u16) / 2,
+        controls_y + 1,
+    ))?;
+    write!(stdout, "{}", controls_s)?;
+    
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(controls_esc.len() as u16) / 2,
+        controls_y + 2,
+    ))?;
+    write!(stdout, "{}", controls_esc)?;
+    
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(start_msg.len() as u16) / 2,
+        controls_y + 4,
+    ))?;
+    write!(stdout, "{}", start_msg)?;
+    
+    // Show progress indicator
+    let progress = (elapsed.as_secs_f32() / STARTUP_DURATION.as_secs_f32() * 20.0) as usize;
+    let progress_bar = format!("[{}{}]", "=".repeat(progress.min(20)), ".".repeat((20 - progress).min(20)));
+    stdout.queue(crossterm::cursor::MoveTo(
+        width.saturating_sub(progress_bar.len() as u16) / 2,
+        controls_y + 5,
+    ))?;
+    write!(stdout, "{}", progress_bar)?;
+    
+    stdout.flush()?;
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, Hide)?;
 
     let (width, height) = crossterm::terminal::size()?;
+    
+    // Show startup screen for 2 seconds
+    let startup_start = Instant::now();
+    loop {
+        let elapsed = startup_start.elapsed();
+        draw_startup_screen(&mut stdout, width, height, elapsed)?;
+        
+        if elapsed >= STARTUP_DURATION {
+            break;
+        }
+        
+        // Handle skip with ESC during startup
+        if event::poll(Duration::from_millis(50))? {
+            if let Event::Key(key_event) = event::read()? {
+                if key_event.code == KeyCode::Esc || 
+                   (key_event.modifiers.contains(KeyModifiers::CONTROL) && key_event.code == KeyCode::Char('c')) {
+                    execute!(stdout, LeaveAlternateScreen, Show)?;
+                    disable_raw_mode()?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+    
     let mut game = Game::new(width, height);
     let mut last_tick = Instant::now();
 
@@ -227,12 +308,12 @@ fn main() -> std::io::Result<()> {
                 }
 
                 match key_event.code {
-                    // Left paddle (Player) – now uses f32 for smooth movement
-                    KeyCode::Char('w') => {
+                    // Left paddle (Player) – supports W, S, and arrow keys for smooth movement
+                    KeyCode::Char('w') | KeyCode::Up => {
                         game.paddle_a = (game.paddle_a - 2.0)
                             .max(PADDLE_HEIGHT as f32 / 2.0)
                     }
-                    KeyCode::Char('s') => {
+                    KeyCode::Char('s') | KeyCode::Down => {
                         game.paddle_a = (game.paddle_a + 2.0)
                             .min(game.height as f32 - PADDLE_HEIGHT as f32 / 2.0)
                     }
