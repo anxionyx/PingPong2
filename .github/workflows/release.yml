@@ -100,12 +100,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y mold
 
-      - name: Install Android NDK (Termux/Android Target Only)
-        if: matrix.target == 'aarch64-linux-android'
-        uses: nndess/setup-ndk@v1
-        with:
-          ndk-version: r26b
-
       - name: Build Binary (Standard/Linux/macOS)
         if: matrix.os != 'windows-latest' && matrix.target != 'aarch64-linux-android'
         env:
@@ -118,8 +112,8 @@ jobs:
       - name: Build Binary (Android/Termux)
         if: matrix.target == 'aarch64-linux-android'
         run: |
-          # Configure cargo to use the NDK linker for aarch64 android
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+          # Use the pre-installed NDK version available on ubuntu-latest ($ANDROID_NDK_LATEST_HOME)
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
           cargo build --release --target ${{ matrix.target }}
           mkdir dist
           cp target/${{ matrix.target }}/release/PingPong dist/PingPong-${{ matrix.target }}
