@@ -94,25 +94,41 @@ jobs:
           workspaces: |
             .
 
-      - name: Install Mold Linker (Linux Only, Excludes Android)
-        if: contains(matrix.os, 'ubuntu') && matrix.target != 'aarch64-linux-android'
+      - name: Install Linkers & Tools (Linux Only)
+        if: contains(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y mold
+          # Install mold specifically for native x86_64 performance
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y mold
+          # Install the explicit cross-compiler toolchain for generic Linux aarch64
+          elif [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
 
       - name: Build Binary (Standard/Linux/macOS)
         if: matrix.os != 'windows-latest' && matrix.target != 'aarch64-linux-android'
-        env:
-          RUSTFLAGS: ${{ contains(matrix.os, 'ubuntu') && '-C link-arg=-fuse-ld=mold' || '' }}
+        shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }}
           mkdir dist
+          
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            # Safe to use Mold natively on host platform
+            RUSTFLAGS="-C link-arg=-fuse-ld=mold" cargo build --release --target ${{ matrix.target }}
+          elif [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            # Direct Cargo to use the dedicated aarch64 cross-linker we installed
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="aarch64-linux-gnu-gcc"
+            cargo build --release --target ${{ matrix.target }}
+          else
+            # macOS targets
+            cargo build --release --target ${{ matrix.target }}
+          fi
+          
           cp target/${{ matrix.target }}/release/PingPong dist/PingPong-${{ matrix.target }}
 
       - name: Build Binary (Android/Termux)
         if: matrix.target == 'aarch64-linux-android'
         run: |
-          # Use the pre-installed NDK version available on ubuntu-latest ($ANDROID_NDK_LATEST_HOME)
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
           cargo build --release --target ${{ matrix.target }}
           mkdir dist
