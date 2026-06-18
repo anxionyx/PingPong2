@@ -57,11 +57,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux Targets (glibc - faster than musl)
+          # Linux Targets (glibc)
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
+
+          # Termux / Android Target
+          - os: ubuntu-latest
+            target: aarch64-linux-android
 
           # MacOS Targets
           - os: macos-latest
@@ -90,17 +94,48 @@ jobs:
           workspaces: |
             .
 
-      - name: Install Mold Linker (Linux)
-        if: contains(matrix.os, 'ubuntu')
+      - name: Install Mold Linker (Linux Only, Excludes Android)
+        if: contains(matrix.os, 'ubuntu') && matrix.target != 'aarch64-linux-android'
         run: |
           sudo apt-get update
           sudo apt-get install -y mold
 
-      - name: Run Cross-Compilation & Upload to Release
-        uses: taiki-e/upload-rust-binary-action@v1
+      - name: Install Android NDK (Termux/Android Target Only)
+        if: matrix.target == 'aarch64-linux-android'
+        uses: nndess/setup-ndk@v1
         with:
-          bin: PingPong
-          target: ${{ matrix.target }}
-          ref: refs/tags/${{ needs.create-release.outputs.version }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ndk-version: r26b
+
+      - name: Build Binary (Standard/Linux/macOS)
+        if: matrix.os != 'windows-latest' && matrix.target != 'aarch64-linux-android'
+        env:
           RUSTFLAGS: ${{ contains(matrix.os, 'ubuntu') && '-C link-arg=-fuse-ld=mold' || '' }}
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir dist
+          cp target/${{ matrix.target }}/release/PingPong dist/PingPong-${{ matrix.target }}
+
+      - name: Build Binary (Android/Termux)
+        if: matrix.target == 'aarch64-linux-android'
+        run: |
+          # Configure cargo to use the NDK linker for aarch64 android
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+          cargo build --release --target ${{ matrix.target }}
+          mkdir dist
+          cp target/${{ matrix.target }}/release/PingPong dist/PingPong-${{ matrix.target }}
+
+      - name: Build Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir dist
+          cp target/${{ matrix.target }}/release/PingPong.exe dist/PingPong-${{ matrix.target }}.exe
+
+      - name: Upload Binary to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
