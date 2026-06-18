@@ -22,8 +22,10 @@ Go to the release page and download the executable
 #### Method 3 (For Termux)
 ```
 wget -O $PREFIX/bin/pp  https://github.com/anxionyx/PingPong/releases/download/v0.1.9/PingPong-termux && chmod +x $PREFIX/bin/pp
+pp
 ```
 > [!WARNING]
 > This uses the leagacy version from the original PingPong game. It is very old but playable
+
 > [!TIP]
 > For the bleeding edge game experience , do "pkg i rust" and compile using Method 1
