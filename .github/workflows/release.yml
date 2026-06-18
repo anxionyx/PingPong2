@@ -1,11 +1,14 @@
 name: Cross-Compile and Release
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
     tags:
       - 'v*'
+    paths-ignore:
+      - '**/*.md'
 
 permissions:
   contents: write
